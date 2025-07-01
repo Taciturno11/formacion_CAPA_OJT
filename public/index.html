@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Asistencia en Formación</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+
+<body class="bg-gray-100 p-6">
+
+  <!-- ▸ Fila de filtros / acciones iniciales -->
+  <div class="flex flex-wrap items-center gap-4 mb-6">
+
+    <!-- DNI + Validar -->
+    <div class="flex items-center gap-2">
+      <input  id="dniInput"
+              list="capacitadoresList"
+              class="border p-2 w-48"
+              placeholder="DNI capacitador"/>
+      <datalist id="capacitadoresList"></datalist>
+
+      <button id="btnValidar"
+              class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded">
+        Validar
+      </button>
+    </div>
+
+    <!-- ▼ Datos del capacitador (aparecen tras validar) -->
+    <div id="datosCapacitador" class="hidden flex items-center gap-4">
+      <!-- Nombre -->
+      <div class="flex flex-col">
+        <label for="nombresCap" class="text-sm font-medium">Nombres</label>
+        <input id="nombresCap"
+               disabled
+               class="border p-2 bg-gray-200 w-48"/>
+      </div>
+      <!-- Apellido Paterno -->
+      <div class="flex flex-col">
+        <label for="apePatCap" class="text-sm font-medium">Apellido Paterno</label>
+        <input id="apePatCap"
+               disabled
+               class="border p-2 bg-gray-200 w-48"/>
+      </div>
+    </div>
+
+    <!-- Campaña · Mes · Cargar (se ocultan hasta validar) -->
+    <div id="selector" class="hidden flex flex-wrap items-center gap-4">
+      <select id="campaniaSelect" class="border p-2 min-w-[10rem]"></select>
+      <input id="mesInput" type="month" class="border p-2"/>
+
+      <!-- NUEVO: selector de capas -->
+      <select id="capaSelect"
+              class="hidden border p-2 min-w-[8rem]">
+      </select>
+
+      <button id="btnCargar"
+              class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+        Cargar
+      </button>
+    </div>
+
+  <!-- ▸ Tabla -->
+  <div id="tablaContainer" class="overflow-x-auto"></div>
+
+  <!-- ▸ Botones inferiores -->
+  <div id="acciones" class="hidden flex items-center gap-4 mt-6">
+    <button id="btnGuardar"
+            class="hidden bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded">
+      Guardar cambios
+    </button>
+
+    <button id="btnExcel"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
+      Descargar Excel
+    </button>
+  </div>
+
+  <!-- JS principal (módulos) -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
