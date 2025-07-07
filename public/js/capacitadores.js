@@ -17,6 +17,7 @@ export async function initCapacitadores() {
       // Mostrar datos del capacitador
       document.getElementById('nombresCap').value   = data.nombres;
       document.getElementById('apePatCap').value    = data.apellidoPaterno;
+      document.getElementById('apeMatCap').value    = data.apellidoMaterno;
       document.getElementById('datosCapacitador').classList.remove('hidden');
 
       // Poner campañas y desocultar selector

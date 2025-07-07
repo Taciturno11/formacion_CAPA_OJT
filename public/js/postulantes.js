@@ -1,14 +1,8 @@
-/* public/js/postulantes.js
-   ----------------------------------------------------------
-   Maneja capas (lotes), tabla de asistencia y reporte
-   de deserciones. Un solo botón “Guardar cambios” persiste
-   TODO (asistencia + nuevas deserciones) en el backend.
-*/
 import { api }            from './api.js';
 import { descargarExcel } from './excel.js';
 
 export function initPostulantes() {
-  /* ──────────────────────────── refs DOM ─────────────────────────── */
+  /* ─────────────── refs DOM ─────────────── */
   const dniInput        = document.getElementById('dniInput');
   const campSelect      = document.getElementById('campaniaSelect');
   const mesInput        = document.getElementById('mesInput');
@@ -19,100 +13,135 @@ export function initPostulantes() {
 
   const accionesDiv     = document.getElementById('acciones');
   const btnGuardar      = document.getElementById('btnGuardar');
+  const btnGuardarDes   = document.getElementById('btnGuardarDes');
   const btnExcel        = document.getElementById('btnExcel');
 
-  /* 2ª tabla – Deserciones */
-  const desWrapper      = document.getElementById('desercionesWrapper');   // div
-  const desContainer    = document.getElementById('desercionesContainer'); // <table> se inyecta aquí
+  const desWrapper      = document.getElementById('desercionesWrapper');
+  const desContainer    = document.getElementById('desercionesContainer');
+  const accionesDes     = document.getElementById('accionesDeserciones');
+  const resumenWrapper = document.getElementById('resumenWrapper');
 
-  /* ───────────────────────────── estado ──────────────────────────── */
-  let dias        = [];            // ['YYYY-MM-DD', …]
-  let capCount    = 5;             // nº columnas de capacitación
-  let tablaDatos  = [];            // [{ nombre,dni,numero, asistencia[] }]
-  let deserciones = [];            // [{postulante_dni, nombre, numero, fecha_desercion, motivo, capa_numero, guardado}]
-  let filtroCache = '';            // para no pedir lotes cada vez
+
+  /* ─────────────── estado ─────────────── */
+  let dias        = [];
+  let capCount    = 5;
+  let tablaDatos  = [];
+  let deserciones = [];
+  let filtroCache = '';
   let dirty       = false;
 
-  /* ──────────────────────────── helpers ──────────────────────────── */
+  /* ─────────────── helpers ─────────────── */
   const nextDate = iso => {
-    const [y, m, d] = iso.split('-').map(Number);
-    const dt = new Date(y, m - 1, d);
-    do { dt.setDate(dt.getDate() + 1); } while (dt.getDay() === 0);
-    return dt.toISOString().slice(0, 10);
+    const [y,m,d] = iso.split('-').map(Number);
+    const dt = new Date(y, m-1, d);
+    do { dt.setDate(dt.getDate()+1); } while (dt.getDay() === 0);
+    return dt.toISOString().slice(0,10);
   };
   const refreshOJT = () => {
-    for (let i = capCount; i < dias.length; i++) dias[i] = nextDate(dias[i - 1]);
+    for (let i = capCount; i < dias.length; i++) {
+      dias[i] = nextDate(dias[i-1]);
+    }
   };
-  const setDirty = v => { dirty = v; btnGuardar.classList.toggle('hidden', !v); };
+  const setDirty = v => {
+    dirty = v;
+    btnGuardar.classList.toggle('hidden', !v);
+    if (btnGuardarDes) btnGuardarDes.classList.toggle('hidden', !v);
+  };
 
-  /* ────────────────── CARGAR (capas, postulantes…) ───────────────── */
+  /* ────────── handler botón Cargar ────────── */
   btnCargar.onclick = async () => {
     const dniCap = dniInput.value.trim();
     const camp   = campSelect.value;
     const mes    = mesInput.value;
     if (!dniCap || !mes) return alert('Completa los filtros');
 
-    /* 1️⃣ lotes (capas) */
+    // 1) cargar lotes
     const fKey = `${dniCap}|${camp}|${mes}`;
     if (fKey !== filtroCache || !capaSelect.options.length) {
-      const lotes = await api(`/api/capas?dniCap=${dniCap}&campania=${encodeURIComponent(camp)}&mes=${mes}`);
-      if (!lotes.length) return alert('Sin datos para ese filtro');
-
-      const before = capaSelect.value;
-      capaSelect.innerHTML = lotes.map(l =>
-        `<option value="${l.fechaInicio}">Capa ${l.capa} – ${l.fechaInicio}</option>`
-      ).join('');
-      if ([...capaSelect.options].some(o => o.value === before)) capaSelect.value = before;
+      const lotes = await api(
+        `/api/capas?dniCap=${dniCap}` +
+        `&campania=${encodeURIComponent(camp)}` +
+        `&mes=${mes}`
+      );
+      if (!lotes.length) { alert('Sin datos para ese filtro'); return; }
+      capaSelect.innerHTML = lotes
+        .map(l => `<option value="${l.fechaInicio}">Capa ${l.capa} – ${l.fechaInicio}</option>`)
+        .join('');
       capaSelect.classList.remove('hidden');
       filtroCache = fKey;
     }
     const fechaIni = capaSelect.value;
+    const capaNum  = capaSelect.selectedIndex + 1;  // <-- calculamos el número de capa
 
-    /* 2️⃣ datos de la capa seleccionada */
-    const data = await api(
-      `/api/postulantes?dniCap=${dniCap}&campania=${encodeURIComponent(camp)}&mes=${mes}&fechaInicio=${fechaIni}`
-    );
-    const { postulantes, asistencias, duracion } = data;
-
-    /* 3️⃣ generar fechas partiendo de fechaIni */
-    dias = [fechaIni];
-    while (dias.length < duracion.cap + duracion.ojt) dias.push(nextDate(dias.at(-1)));
-    capCount = duracion.cap;
-
-    /* 4️⃣ tabla de asistencia vacía */
-    tablaDatos = postulantes.map(p => ({
-      ...p,
-      numero: p.telefono || '',
-      asistencia: dias.map(() => '')
-    }));
-
-    /* 5️⃣ inyectar asistencias previas */
-    const posDni = Object.fromEntries(tablaDatos.map((p, i) => [p.dni, i]));
-    const posF   = Object.fromEntries(dias.map((d, i) => [d, i]));
-    asistencias.forEach(a => {
-      const r = posDni[a.postulante_dni];
-      const c = posF[a.fecha];
-      if (r != null && c != null) tablaDatos[r].asistencia[c] = a.estado_asistencia;
-    });
-
-    /* 6️⃣ deserciones ya guardadas */
-    const desPrev = await api(
-      `/api/deserciones?dniCap=${dniCap}&campania=${encodeURIComponent(camp)}` +
+    // 2) cargar postulantes y asistencias
+    const { postulantes, asistencias, duracion } = await api(
+      `/api/postulantes?dniCap=${dniCap}` +
+      `&campania=${encodeURIComponent(camp)}` +
       `&mes=${mes}&fechaInicio=${fechaIni}`
     );
-    deserciones = desPrev.map(d => ({ ...d, guardado: true }));
 
-    /* render */
-    renderTabla();
+    // 3) construir fechas y tablaDatos base
+    dias = [fechaIni];
+    while (dias.length < duracion.cap + duracion.ojt) {
+      dias.push(nextDate(dias.at(-1)));
+    }
+    capCount = duracion.cap;
+    tablaDatos = postulantes.map(p => ({
+      ...p,
+      numero     : p.telefono || '',
+      asistencia : dias.map(() => '')
+    }));
+
+    // 4) rellenar asistencias previas
+    const posDni = Object.fromEntries(tablaDatos.map((p,i) => [p.dni,i]));
+    const posF   = Object.fromEntries(dias.map((d,i) => [d,i]));
+    asistencias.forEach(a => {
+      const r = posDni[a.postulante_dni], c = posF[a.fecha];
+      if (r != null && c != null) {
+        tablaDatos[r].asistencia[c] = a.estado_asistencia;
+      }
+    });
+
+    // 5) cargar deserciones del servidor, incluyendo &capa=
+    const desPrev = await api(
+      `/api/deserciones?` +
+      `dniCap=${dniCap}` +
+      `&campania=${encodeURIComponent(camp)}` +
+      `&mes=${mes}` +
+      `&capa=${capaNum}`
+    );
+    // 6) asignar y permitir editar motivo
+    deserciones = desPrev.map(d => ({
+      ...d,
+      capa_numero: capaNum,
+      guardado: false
+    }));
+
+    // 7) renderizar deserciones y mostrar el panel
     renderDeserciones();
-    accionesDiv.classList.remove('hidden');
     desWrapper.classList.remove('hidden');
+    if (accionesDes) accionesDes.classList.remove('hidden');
+
+    // 8) ocultar botón “Guardar” hasta que haya cambios
     setDirty(false);
+    
+    // 9) renderizar tabla de asistencias
+    renderTabla();
+
+    // 10) renderizar tabla de resumen
+    renderResumen();
   };
 
-  /* ────────────────────────── TABLA ASISTENCIA ───────────────────── */
+
+
+
+
+
+
+
+  /* ═══════════════════ TABLA DE ASISTENCIA ═══════════════════ */
   function renderTabla() {
-    const ojt = dias.length - capCount;
+    const ojtCount = dias.length - capCount;
 
     /* cabeceras */
     const head1 = `
@@ -123,42 +152,49 @@ export function initPostulantes() {
           Capacitación
           <span data-action="addCap" class="cursor-pointer text-blue-800">+</span>
         </th>
-        ${ ojt ? `
-        <th colspan="${ojt}" class="border bg-teal-300 text-center">
+        ${ojtCount ? `
+        <th colspan="${ojtCount}" class="border bg-teal-300 text-center">
           <span data-action="subOjt" class="cursor-pointer text-red-700">−</span>
           OJT
           <span data-action="addOjt" class="cursor-pointer text-teal-800">+</span>
-        </th>` : '' }
+        </th>` : ''}
       </tr>`;
     const head2 = `
       <tr><th></th><th></th><th></th>${
-        dias.map((_,i)=>`
-          <th class="border px-2 text-center ${i<capCount?'bg-indigo-200':'bg-teal-200'}">
-            Día ${i+1}
-          </th>`).join('')
+        dias.map((_,i) => `
+          <th class="border px-2 text-center ${
+            i < capCount ? 'bg-indigo-200' : 'bg-teal-200'
+          }">Día ${i+1}</th>`
+        ).join('')
       }</tr>`;
     const head3 = `
       <tr>
         <th class="border px-2">Nombre</th>
         <th class="border px-2">DNI</th>
         <th class="border px-2">Número</th>${
-        dias.map((d,i)=>`
-          <th class="border px-2 text-center ${i<capCount?'bg-indigo-200':'bg-teal-200'}">${d}</th>`
+        dias.map((d,i) => `
+          <th class="border px-2 text-center ${
+            i < capCount ? 'bg-indigo-200' : 'bg-teal-200'
+          }">${d}</th>`
         ).join('')
       }</tr>`;
 
     /* cuerpo */
-    const body = tablaDatos.map((p,r)=>`
+    const body = tablaDatos.map((p,r) => `
       <tr>
         <td class="border px-2">${p.nombre}</td>
         <td class="border px-2 text-center">${p.dni}</td>
         <td class="border px-2 text-center">${p.numero}</td>${
-        dias.map((_,c)=>`
-          <td class="border px-2 ${c<capCount?'bg-indigo-50':'bg-teal-50'}">
-            <select class="w-full bg-transparent outline-none"
-                    data-row="${r}" data-col="${c}">
-              <option value=""></option><option>A</option><option>T</option>
-              <option>F</option><option>J</option><option value="D">Deserción</option>
+        dias.map((_,c) => `
+          <td class="border px-2 ${
+            c < capCount ? 'bg-indigo-50' : 'bg-teal-50'
+          }">
+            <select data-row="${r}" data-col="${c}"
+                    class="w-full outline-none bg-transparent">
+              <option value=""></option>
+              <option>A</option><option>T</option>
+              <option>F</option><option>J</option>
+              <option value="D">Deserción</option>
             </select>
           </td>`).join('')
       }</tr>`).join('');
@@ -169,63 +205,98 @@ export function initPostulantes() {
         <tbody>${body}</tbody>
       </table>`;
 
-    /* listeners encabezado + / − */
-    tablaContainer.querySelector('thead').onclick = e=>{
-      const a=e.target.dataset.action;
-      if(a==='addCap') addCap();
-      if(a==='subCap') subCap();
-      if(a==='addOjt') addOjt();
-      if(a==='subOjt') subOjt();
+    /* header listeners */
+    tablaContainer.querySelector('thead').onclick = e => {
+      const a = e.target.dataset.action;
+      if (a === 'addCap') addCap();
+      if (a === 'subCap') subCap();
+      if (a === 'addOjt') addOjt();
+      if (a === 'subOjt') subOjt();
     };
 
-    /* listeners selects */
-    tablaContainer.querySelectorAll('select').forEach(sel=>{
-      const {row,col}=sel.dataset;
+    const lockAfter = (sel, cIdx) => {
+      const tr = sel.closest('tr')
+      tr.classList.add('bg-red-100')
+      tr.querySelectorAll('select').forEach((s, i) => {
+        const td = s.closest('td')
+        if (i > cIdx) {
+          s.value = '---'
+          s.disabled = true
+          s.classList.add('appearance-none');
+          // quito los viejos bg y pongo gris oscuro
+          td.classList.remove('bg-indigo-50', 'bg-teal-50')
+          td.classList.add('bg-gray-300')
+        }
+      })
+    }
+
+    const unlockRow = sel => {
+      const tr = sel.closest('tr')
+      tr.classList.remove('bg-red-100')
+      tr.querySelectorAll('select').forEach((s, i) => {
+        const td = s.closest('td')
+        if (s.disabled) {
+          s.disabled = false
+          td.classList.remove('bg-gray-300')
+          // vuelvo a poner el fondo original según si es CAP o OJT
+          if (i < capCount) td.classList.add('bg-indigo-50')
+          else             td.classList.add('bg-teal-50')
+          if (s.value === '---') s.value = ''
+        }
+      })
+    }
+
+
+    /* bind selects */
+    tablaContainer.querySelectorAll('select').forEach(sel => {
+      const { row, col } = sel.dataset;
       sel.value = tablaDatos[row].asistencia[col] || '';
-      sel.onchange = e=>{
+
+      if (sel.value === 'D') lockAfter(sel, +col);
+
+      sel.onchange = e => {
         const val = e.target.value;
         tablaDatos[row].asistencia[col] = val;
-        const tr = sel.closest('tr');
+        const dni     = tablaDatos[row].dni;
+        const capaNum = capaSelect.selectedIndex + 1;
 
-        if (val === 'D') {                       /* ⬅ Deserción */
-          tr.classList.add('bg-red-100');
-          tr.querySelectorAll('select').forEach((s,iSel)=>{
-            if (iSel > col){ s.value=''; s.disabled=true; }
-          });
-          /* registrar / actualizar en array deserciones */
-          const dni     = tablaDatos[row].dni;
-          const existe  = deserciones.find(d=>d.postulante_dni===dni);
-          const capaNum = capaSelect.selectedIndex + 1;
+        if (val === 'D') {
+          lockAfter(sel, +col);
           const obj = {
-            postulante_dni : dni,
-            nombre         : tablaDatos[row].nombre,
-            numero         : tablaDatos[row].numero,
-            fecha_desercion: dias[col],
-            motivo         : '',
-            capa_numero    : capaNum,
-            guardado       : false
+            postulante_dni  : dni,
+            nombre          : tablaDatos[row].nombre,
+            numero          : tablaDatos[row].numero,
+            fecha_desercion : dias[col],
+            motivo          : '',
+            capa_numero     : capaNum,
+            guardado        : false
           };
-          if (!existe) deserciones.push(obj);
-          else Object.assign(existe, obj);
-          renderDeserciones();
-        } else {                                /* ya NO es deserción */
-          tr.classList.remove('bg-red-100');
-          tr.querySelectorAll('select').forEach(s=> s.disabled=false);
-          const idx = deserciones.findIndex(d=>d.postulante_dni===tablaDatos[row].dni);
-          if (idx>-1 && !deserciones[idx].guardado) deserciones.splice(idx,1);
-          renderDeserciones();
+          const found = deserciones.find(d => d.postulante_dni === dni);
+          if (!found) deserciones.push(obj);
+          else Object.assign(found, obj);
+
+        } else {
+          unlockRow(sel);
+          const idx = deserciones.findIndex(d =>
+            d.postulante_dni === dni && !d.guardado
+          );
+          if (idx > -1) deserciones.splice(idx, 1);
         }
+
+        renderDeserciones();
         setDirty(true);
       };
     });
   }
 
-  /* ─────────── tabla de deserciones (solo-lectura + motivo) ───────── */
-  function renderDeserciones(){
-    if(!deserciones.length){
-      desContainer.innerHTML = '<p class="text-sm italic text-gray-500">Sin deserciones registradas</p>';
+  /* ═════════════ tabla reporte deserciones ═════════════ */
+  function renderDeserciones() {
+    if (!deserciones.length) {
+      desContainer.innerHTML =
+        '<p class="text-sm italic text-gray-500">Sin deserciones registradas</p>';
       return;
     }
+
     desContainer.innerHTML = `
       <table class="text-sm border-collapse min-w-max">
         <thead>
@@ -234,95 +305,185 @@ export function initPostulantes() {
             <th class="border px-2">DNI</th>
             <th class="border px-2">Número</th>
             <th class="border px-2">Fecha</th>
-            <th class="border px-2">Motivo</th>
+            <th class="border px-2 min-w-[300px]">Motivo</th>
           </tr>
         </thead>
         <tbody>
-          ${deserciones.map(d=>`
-            <tr class="${d.guardado?'bg-gray-50':''}">
+          ${deserciones.map(d => `
+            <tr class="${d.guardado ? 'bg-gray-50' : ''}">
               <td class="border px-2">${d.nombre}</td>
               <td class="border px-2 text-center">${d.postulante_dni}</td>
               <td class="border px-2 text-center">${d.numero}</td>
               <td class="border px-2 text-center">${d.fecha_desercion}</td>
-              <td class="border px-2">
-                <input type="text" class="w-full outline-none bg-transparent ${d.guardado?'opacity-50':''}"
+              <td class="border px-2 min-w-[300px]">
+                <input class="w-full bg-transparent outline-none ${
+                  d.guardado ? 'opacity-50' : ''
+                }"
                        data-dni="${d.postulante_dni}"
-                       value="${d.motivo||''}"
-                       ${d.guardado?'disabled':''}>
+                       value="${d.motivo || ''}"
+                       placeholder = "Ingrese el motivo"
+                       ${d.guardado ? 'disabled' : ''}/>
               </td>
             </tr>`).join('')}
         </tbody>
       </table>`;
 
-    /* recoger motivo (solo para los nuevos) */
-    desContainer.querySelectorAll('input:not([disabled])').forEach(inp=>{
-      inp.oninput = e=>{
-        const d = deserciones.find(x=>x.postulante_dni===inp.dataset.dni);
-        if(d){ d.motivo = e.target.value; setDirty(true); }
-      };
-    });
+    desContainer.querySelectorAll('input:not([disabled])')
+      .forEach(inp => {
+        inp.oninput = e => {
+          const d = deserciones.find(x => x.postulante_dni === inp.dataset.dni);
+          if (d) { d.motivo = e.target.value; setDirty(true); }
+        };
+      });
   }
 
-  /* ──────────────── operaciones columnas (+ / −) ─────────────────── */
-  function addCap(){ dias.splice(capCount,0,nextDate(dias[capCount-1])); capCount++;
-    tablaDatos.forEach(p=>p.asistencia.splice(capCount-1,0,'')); refreshOJT(); renderTabla(); setDirty(true);}
-  function subCap(){ if(capCount<=1)return; dias.splice(capCount-1,1); capCount--;
-    tablaDatos.forEach(p=>p.asistencia.splice(capCount,1)); refreshOJT(); renderTabla(); setDirty(true);}
-  function addOjt(){ dias.push(nextDate(dias.at(-1))); tablaDatos.forEach(p=>p.asistencia.push(''));
-    renderTabla(); setDirty(true);}
-  function subOjt(){ if(dias.length<=capCount)return; dias.pop(); tablaDatos.forEach(p=>p.asistencia.pop());
-    renderTabla(); setDirty(true);}
+  /* ═════════════ columnas dinámicas + / − ═════════════ */
+  function addCap() {
+    dias.splice(capCount, 0, nextDate(dias[capCount - 1]));
+    capCount++;
+    tablaDatos.forEach(p => p.asistencia.splice(capCount - 1, 0, ''));
+    refreshOJT(); renderTabla(); setDirty(true);
+  }
+  function subCap() {
+    if (capCount <= 1) return;
+    dias.splice(capCount - 1, 1);
+    capCount--;
+    tablaDatos.forEach(p => p.asistencia.splice(capCount, 1));
+    refreshOJT(); renderTabla(); setDirty(true);
+  }
+  function addOjt() {
+    dias.push(nextDate(dias.at(-1)));
+    tablaDatos.forEach(p => p.asistencia.push(''));
+    renderTabla(); setDirty(true);
+  }
+  function subOjt() {
+    if (dias.length <= capCount) return;
+    dias.pop();
+    tablaDatos.forEach(p => p.asistencia.pop());
+    renderTabla(); setDirty(true);
+  }
 
-  /* ─────────────────────── GUARDAR único ─────────────────────────── */
-  btnGuardar.onclick = async ()=>{
-    /* 1. asistencia */
+  /* ═════════════ GUARDAR todo ═════════════ */
+  const handleSave = async () => {
+   // Volvemos a tomar la capa seleccionada
+   const fechaIni = capaSelect.value;
+    // 1) payload de asistencia
     const payloadA = [];
-    tablaDatos.forEach(p=>{
-      p.asistencia.forEach((est,i)=>{
-        if(est){
+    tablaDatos.forEach(p => {
+      p.asistencia.forEach((est,i) => {
+        if (est) {
           payloadA.push({
-            postulante_dni:p.dni,
-            fecha:dias[i],
-            etapa:i<capCount?'Capacitacion':'OJT',
-            estado_asistencia:est
+            postulante_dni    : p.dni,
+            fecha             : dias[i],
+            etapa             : i < capCount ? 'Capacitacion' : 'OJT',
+            estado_asistencia : est
           });
         }
       });
     });
 
-    /* 2. solo deserciones NO guardadas aún */
-    const nuevosDes = deserciones.filter(d=>!d.guardado)
-      .map(d=>({
-        postulante_dni : d.postulante_dni,
-        fecha_desercion: d.fecha_desercion,
-        motivo         : d.motivo,
-        capa_numero    : d.capa_numero
+    // 2) payload de deserciones
+    let desToSend = deserciones
+      .filter(d => d.motivo && d.motivo.trim() !== '')
+      .map(d => ({
+        postulante_dni  : d.postulante_dni,
+        fecha_desercion : d.fecha_desercion,
+        motivo          : d.motivo,
+        capa_numero     : d.capa_numero
       }));
 
-    if(!payloadA.length && !nuevosDes.length){
-      alert('Nada por guardar'); return;
+    // 3) nada que guardar?
+    if (!payloadA.length && !desToSend.length) {
+      alert('Nada por guardar');
+      return;
     }
 
-    if(payloadA.length){
-      await api('/api/asistencia/bulk',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(payloadA)
+    // 4) enviar asistencia
+    if (payloadA.length) {
+      await api('/api/asistencia/bulk', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify(payloadA)
       });
     }
-    if(nuevosDes.length){
-      await api('/api/deserciones/bulk',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(nuevosDes)
+
+    // 5) enviar deserciones (ahora con fechaInicio)
+    if (desToSend.length) {
+      const desToSendConFecha = desToSend.map(d => ({
+        ...d,
+       fechaInicio: fechaIni      // <-- ahora sí, porque lo acabamos de definir
+      }));
+      console.log('🛠 Deserciones a enviar:', desToSendConFecha);
+
+      await api('/api/deserciones/bulk', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify(desToSendConFecha)
       });
-      /* márcalas como guardadas */
-      deserciones.forEach(d=> d.guardado = true);
+
+      deserciones.forEach(d => d.guardado = true);
       renderDeserciones();
+      localStorage.setItem('deserciones', JSON.stringify(deserciones));
     }
 
+    // 6) feedback al usuario
     alert('Cambios guardados ✔️');
     setDirty(false);
+    desWrapper.classList.remove('hidden');
+    if (accionesDes) accionesDes.classList.remove('hidden');
+
+    renderResumen();
   };
 
-  /* ─────────────────────── Excel ─────────────────────── */
-  btnExcel.onclick = ()=> descargarExcel({ tablaDatos, dias, capCount });
+  // atar ambos botones al mismo handler
+  btnGuardar.onclick    = handleSave;
+  if (btnGuardarDes) btnGuardarDes.onclick = handleSave;
+
+  /* ═════════════ Excel ═════════════ */
+  btnExcel.onclick = () =>
+    descargarExcel({ tablaDatos, dias, capCount });
+
+
+
+
+function renderResumen() {
+  const campaña     = campSelect.value;
+  const capacitador = `${document.getElementById('nombresCap').value} ${document.getElementById('apePatCap').value} ${document.getElementById('apeMatCap').value}`;
+  const total       = tablaDatos.length;
+  const bajas       = deserciones.length;
+  const activos     = total - bajas;
+
+resumenWrapper.innerHTML = `
+  <h2 class="text-2xl font-bold mb-4 text-gray-800">Resumen</h2>
+  <table class="table-fixed w-full text-sm border-collapse border border-gray-200">
+    <tbody>
+      <tr class="h-12">
+        <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Capacitador</td>
+        <td class="border border-gray-200 px-3 py-2 text-center text-gray-900">${capacitador}</td>
+      </tr>
+      <tr class="h-12">
+        <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Campaña</td>
+        <td class="border border-gray-200 px-3 py-2 text-center text-gray-900">${campaña}</td>
+      </tr>
+      <tr class="h-12 bg-gray-100">
+        <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Total Postulantes</td>
+        <td class="border border-gray-200 px-3 py-2 text-center text-gray-900">${total}</td>
+      </tr>
+      <tr class="h-12 bg-red-100">
+        <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Deserciones/Bajas</td>
+        <td class="border border-gray-200 px-3 py-2 text-center text-gray-900">${bajas}</td>
+      </tr>
+      <tr class="h-12 bg-green-100">
+        <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Activos</td>
+        <td class="border border-gray-200 px-3 py-2 text-center text-gray-900">${activos}</td>
+      </tr>
+    </tbody>
+  </table>
+`;
+resumenWrapper.classList.remove('hidden');
+
+}
+
+
+
 }

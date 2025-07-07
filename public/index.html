@@ -6,7 +6,6 @@
 
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-
   <!-- SheetJS -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -23,57 +22,50 @@
               class="border p-2 w-48"
               placeholder="DNI capacitador"/>
       <datalist id="capacitadoresList"></datalist>
-
       <button id="btnValidar"
               class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded">
         Validar
       </button>
     </div>
 
-    <!-- ▼ Datos del capacitador (aparecen tras validar) -->
+    <!-- Datos del capacitador -->
     <div id="datosCapacitador" class="hidden flex items-center gap-4">
-      <!-- Nombre -->
       <div class="flex flex-col">
         <label for="nombresCap" class="text-sm font-medium">Nombres</label>
-        <input id="nombresCap"
-               disabled
-               class="border p-2 bg-gray-200 w-48"/>
+        <input id="nombresCap" disabled class="border p-2 bg-gray-200 w-48"/>
       </div>
-      <!-- Apellido Paterno -->
       <div class="flex flex-col">
         <label for="apePatCap" class="text-sm font-medium">Apellido Paterno</label>
-        <input id="apePatCap"
-               disabled
-               class="border p-2 bg-gray-200 w-48"/>
+        <input id="apePatCap" disabled class="border p-2 bg-gray-200 w-48"/>
+      </div>
+      <div class="flex flex-col">
+      <label for="apeMatCap" class="text-sm font-medium">Apellido Materno</label>
+      <input id="apeMatCap" disabled class="border p-2 bg-gray-200 w-48"/>
       </div>
     </div>
 
-    <!-- Campaña · Mes · Cargar (se ocultan hasta validar) -->
+    <!-- Campaña · Mes · Cargar -->
     <div id="selector" class="hidden flex flex-wrap items-center gap-4">
       <select id="campaniaSelect" class="border p-2 min-w-[10rem]"></select>
       <input id="mesInput" type="month" class="border p-2"/>
-
-      <!-- NUEVO: selector de capas -->
-      <select id="capaSelect"
-              class="hidden border p-2 min-w-[8rem]">
-      </select>
-
+      <select id="capaSelect" class="hidden border p-2 min-w-[8rem]"></select>
       <button id="btnCargar"
               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
         Cargar
       </button>
     </div>
 
-  <!-- ▸ Tabla -->
+  </div> <!-- /fin filtros -->
+
+  <!-- ▸ Tabla de asistencia -->
   <div id="tablaContainer" class="overflow-x-auto"></div>
 
-  <!-- ▸ Botones inferiores -->
+  <!-- ▸ Botones debajo de la tabla -->
   <div id="acciones" class="hidden flex items-center gap-4 mt-6">
     <button id="btnGuardar"
             class="hidden bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded">
       Guardar cambios
     </button>
-
     <button id="btnExcel"
             class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
       Descargar Excel
@@ -81,24 +73,69 @@
   </div>
 
 
-<!-- ▼ Reporte de Deserciones -------------------------------------------- -->
-<div id="desercionesWrapper" class="hidden mt-8">
-  <h2 class="font-semibold text-lg mb-2">Reporte de Deserciones</h2>
 
-  <!-- aquí se pinta la tabla -->
-  <div id="desercionesContainer" class="overflow-x-auto"></div>
 
-  <button id="btnGuardarDes"
-          class="hidden">
-  </button>
+
+
+
+
+
+
+<!-- ▼ Reportes: Deserciones + Resumen ──────────────────────────────── -->
+<div class="mt-8 md:flex md:items-start md:gap-6">
+  <!-- Reporte de Deserciones -->
+  <div id="desercionesWrapper"
+       class="hidden          
+              md:flex-none    
+              min-w-0">
+    <h2 class="font-semibold text-lg mb-2">Reporte de Deserciones</h2>
+
+    <div id="desercionesContainer" class="overflow-x-auto"></div>
+
+    <div id="accionesDeserciones" class="flex items-center gap-4 mt-4">
+      <button id="btnGuardarDes"
+              class="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded">
+        Guardar cambios
+      </button>
+      <button id="btnExcelDes"
+              class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
+        Descargar Excel
+      </button>
+    </div>
+  </div>
+
+  <!-- Tarjeta de Resumen -->
+  <div id="resumenWrapper" class="hidden md:flex-none md:w-80 p-6 bg-white rounded-lg shadow-lg border border-gray-200">
+    <h2 class="text-2xl font-bold mb-4 text-gray-800">Resumen</h2>
+    <div class="space-y-3 text-sm">
+      <div class="flex justify-between">
+        <span class="font-medium text-gray-600">Capacitador</span>
+        <span class="text-gray-900">${capacitador}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="font-medium text-gray-600">Campaña</span>
+        <span class="text-gray-900">${campania}</span>
+      </div>
+      <div class="border-t pt-3"></div>
+      <div class="flex justify-between">
+        <span class="font-medium text-gray-600">Total Postulantes</span>
+        <span class="text-gray-900">${total}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="font-medium text-gray-600">Deserciones/Bajas</span>
+        <span class="text-gray-900">${bajas}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="font-medium text-gray-600">Activos</span>
+        <span class="text-gray-900">${activos}</span>
+      </div>
+    </div>
+  </div>
+
 </div>
-<!-- -------------------------------------------------------------------- -->
+<!-- ─────────────────────────────────────────────────────────────────── -->
 
-
-
-
-
-  <!-- JS principal (módulos) -->
+  <!-- JS principal -->
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

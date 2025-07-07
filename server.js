@@ -88,7 +88,7 @@ app.get('/api/capacitadores/:dni', async (req, res) => {
     const { recordset } = await pool.request()
       .input('dni', sql.VarChar(20), dni)
       .query(`
-        SELECT e.DNI, e.Nombres, e.ApellidoPaterno,
+        SELECT e.DNI, e.Nombres, e.ApellidoPaterno, e.ApellidoMaterno,
                (SELECT DISTINCT Campaña
                 FROM Postulantes_En_Formacion
                 WHERE DNI_Capacitador = e.DNI
@@ -106,6 +106,7 @@ app.get('/api/capacitadores/:dni', async (req, res) => {
       dni: row.DNI,
       nombres: row.Nombres,
       apellidoPaterno: row.ApellidoPaterno,
+      apellidoMaterno: row.ApellidoMaterno,
       campañas
     });
   } catch (e) { console.error(e); res.sendStatus(500); }
@@ -164,29 +165,41 @@ app.get('/api/postulantes', async (req, res) => {
 
 
 /* 6️⃣ bis  Deserciones ------------------------------------ */
-/* GET /api/deserciones?dniCap=…&campania=…&mes=YYYY-MM&capa=1 */
+// GET /api/deserciones?dniCap=…&campania=…&mes=YYYY-MM&capa=1
 app.get('/api/deserciones', async (req, res) => {
   const { dniCap, campania, mes, capa } = req.query;
   try {
     const { recordset } = await pool.request()
-      .input('dniCap', sql.VarChar(20),  dniCap)
-      .input('camp',   sql.VarChar(100), campania)
-      .input('prefijo',sql.VarChar(7),   mes)      // YYYY-MM
-      .input('capa',   sql.Int,          capa)
+      .input('dniCap',   sql.VarChar(20),  dniCap)
+      .input('camp',     sql.VarChar(100), campania)
+      .input('prefijo',  sql.VarChar(7),   mes)    // YYYY-MM
+      .input('capa',     sql.Int,          capa)
       .query(`
-        SELECT d.postulante_dni,
-               FORMAT(d.fecha_desercion,'yyyy-MM-dd') AS fecha_desercion,
-               d.motivo
-        FROM   Deserciones_Formacion   d
-        JOIN   Postulantes_En_Formacion p  ON p.DNI = d.postulante_dni
-        WHERE  p.DNI_Capacitador   = @dniCap
-          AND  p.Campaña           = @camp
-          AND  FORMAT(p.FechaInicio,'yyyy-MM') = @prefijo
-          AND  d.capa_numero       = @capa
+        SELECT 
+          d.postulante_dni,
+          p.Nombres + ' ' + p.ApellidoPaterno + ' ' + p.ApellidoMaterno AS nombre,
+          p.Telefono AS numero,
+          FORMAT(d.fecha_desercion,'yyyy-MM-dd') AS fecha_desercion,
+          d.motivo,
+          d.capa_numero
+        FROM Deserciones_Formacion d
+        JOIN Postulantes_En_Formacion p 
+          ON p.DNI = d.postulante_dni
+        WHERE 
+          p.DNI_Capacitador          = @dniCap
+          AND p.Campaña              = @camp
+          AND FORMAT(p.FechaInicio,'yyyy-MM') = @prefijo
+          AND d.capa_numero          = @capa
+        ORDER BY d.fecha_desercion
       `);
     res.json(recordset);
-  } catch (e) { console.error(e); res.sendStatus(500); }
+  } catch (e) {
+    console.error(e);
+    res.sendStatus(500);
+  }
 });
+
+
 
 /* POST /api/deserciones/bulk  (body = [{dni,fecha,motivo,capa}]) */
 app.post('/api/deserciones/bulk', async (req, res) => {
@@ -194,38 +207,43 @@ app.post('/api/deserciones/bulk', async (req, res) => {
   await tx.begin();
   try {
     for (const r of req.body) {
+      // 1) MERGE en Deserciones_Formacion (igual que antes)
       await tx.request()
-        .input('dni',   sql.VarChar(20), r.postulante_dni)
-        .input('fecha', sql.Date,        r.fecha_desercion)
-        .input('mot',   sql.Text,        r.motivo || '')
-        .input('capa',  sql.Int,         r.capa_numero)
+        .input('dni',       sql.VarChar(20),   r.postulante_dni)
+        .input('fechaDes',  sql.Date,          r.fecha_desercion)
+        .input('mot',       sql.NVarChar(250), r.motivo       || '')
+        .input('capa',      sql.Int,           r.capa_numero)
         .query(`
 MERGE Deserciones_Formacion AS T
 USING (SELECT @dni AS dni, @capa AS capa) AS S
-ON   T.postulante_dni = S.dni AND T.capa_numero = S.capa
+  ON T.postulante_dni = S.dni AND T.capa_numero = S.capa
 WHEN MATCHED THEN
-      UPDATE SET fecha_desercion = @fecha,
-                 motivo          = @mot
+  UPDATE SET fecha_desercion = @fechaDes, motivo = @mot
 WHEN NOT MATCHED THEN
-      INSERT (postulante_dni, capa_numero, fecha_desercion, motivo)
-      VALUES (@dni, @capa, @fecha, @mot);
+  INSERT (postulante_dni, capa_numero, fecha_desercion, motivo)
+  VALUES (@dni, @capa, @fechaDes, @mot);
+        `);
+
+      // 2) UPDATE en Postulantes_En_Formacion para FechaCese
+      await tx.request()
+        .input('dni',       sql.VarChar(20), r.postulante_dni)
+        .input('fechaIni',  sql.VarChar(10), r.fechaInicio)    // p.e. '2025-07-02'
+        .input('fechaDes',  sql.Date,        r.fecha_desercion)
+        .query(`
+UPDATE Postulantes_En_Formacion
+   SET FechaCese = @fechaDes
+ WHERE DNI            = @dni
+   AND FORMAT(FechaInicio,'yyyy-MM-dd') = @fechaIni;
         `);
     }
     await tx.commit();
-    res.json({ ok:true, filas:req.body.length });
+    res.json({ ok: true });
   } catch (e) {
     await tx.rollback();
-    console.error(e); res.status(500).json({ error:'No se pudo guardar deserciones' });
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo guardar deserciones' });
   }
 });
-
-
-
-
-
-
-
-
 
 
 /* 7️⃣  MERGE de asistencias */
@@ -261,70 +279,10 @@ WHEN NOT MATCHED THEN
   }
 });
 
-/* ----------  DESERCIONES  ---------------------------------------------*/
-// GET (deserciones ya guardadas para ese lote)
-app.get('/api/deserciones', async (req, res)=>{
-  const {dniCap, campania, mes, fechaInicio} = req.query;
-  try{
-    const {recordset}=await pool.request()
-      .input('dniCap', sql.VarChar(20), dniCap)
-      .input('camp'  , sql.VarChar(100),campania)
-      .input('pref',   sql.VarChar(7),  mes)          // yyyy-MM
-      .input('ini' ,   sql.VarChar(10), fechaInicio)  // yyyy-MM-dd
-      .query(`
-        SELECT ad.postulante_dni,
-               p.Nombres + ' ' + p.ApellidoPaterno + ' ' + p.ApellidoMaterno AS nombre,
-               p.Telefono AS numero,
-               CONVERT(char(10), ad.fecha_desercion, 23) AS fecha,
-               ad.motivo,
-               ad.capa_numero
-        FROM Asistencia_Deserciones ad
-        JOIN Postulantes_En_Formacion p ON p.DNI = ad.postulante_dni
-        WHERE p.DNI_Capacitador = @dniCap
-          AND p.Campaña         = @camp
-          AND FORMAT(ad.fecha_desercion,'yyyy-MM') = @pref
-          AND FORMAT(p.FechaInicio,'yyyy-MM-dd') = @ini   -- mismo lote
-      `);
-    res.json(recordset);
-  }catch(e){ console.error(e); res.sendStatus(500); }
-});
-
-// POST (inserta nuevas deserciones)
-app.post('/api/deserciones/bulk', async (req,res)=>{
-  if(!Array.isArray(req.body) || !req.body.length) return res.json({ok:true});
-  const tx = new sql.Transaction(pool); await tx.begin();
-  try{
-    for(const d of req.body){
-      await tx.request()
-        .input('dni',    sql.VarChar(20), d.postulante_dni)
-        .input('fecha',  sql.Date      , d.fecha_desercion)
-        .input('motivo', sql.NVarChar(250), d.motivo || null)
-        .input('capa' , sql.Int       , d.capa_numero)
-        .query(`
-INSERT INTO dbo.Asistencia_Deserciones
-      (postulante_dni, fecha_desercion, motivo, capa_numero)
-VALUES (@dni, @fecha, @motivo, @capa);
-        `);
-    }
-    await tx.commit(); res.json({ok:true});
-  }catch(e){
-    await tx.rollback();
-    console.error(e); res.status(500).json({error:'al guardar deserciones'});
-  }
-});
-/* ----------------------------------------------------------------------*/
-
-
-
-
-
-
-
-
 
 
 
 
 /* 8️⃣  Arranque */
-const PORT = 3000;
+const PORT = process.env.PORT || 4001;
 app.listen(PORT, () => console.log(`🚀  http://localhost:${PORT}`));
