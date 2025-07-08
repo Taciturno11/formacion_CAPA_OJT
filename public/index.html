@@ -49,13 +49,30 @@
       <select id="campaniaSelect" class="border p-2 min-w-[10rem]"></select>
       <input id="mesInput" type="month" class="border p-2"/>
       <select id="capaSelect" class="hidden border p-2 min-w-[8rem]"></select>
+
       <button id="btnCargar"
               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
         Cargar
       </button>
+      <!-- ── Toggle Asistencias/Evaluaciones (oculto por defecto) ── -->
+      <div id="toggleWrapper" class="hidden flex border rounded overflow-hidden ml-4">
+        <button id="tabAsist"
+                class="px-4 py-2 bg-blue-600 text-white">
+          Asistencias
+        </button>
+        <button id="tabEval"
+                class="px-4 py-2 bg-gray-200 text-gray-700">
+          Evaluaciones
+        </button>
+      </div>
+
+
+
     </div>
 
   </div> <!-- /fin filtros -->
+
+
 
   <!-- ▸ Tabla de asistencia -->
   <div id="tablaContainer" class="overflow-x-auto"></div>

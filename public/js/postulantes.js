@@ -9,6 +9,12 @@ export function initPostulantes() {
   const capaSelect      = document.getElementById('capaSelect');
   const btnCargar       = document.getElementById('btnCargar');
 
+  // ── refs para el toggle Asist/Eval ──
+  const toggleWrapper = document.getElementById('toggleWrapper');
+  const tabAsist      = document.getElementById('tabAsist');
+  const tabEval       = document.getElementById('tabEval');
+
+
   const tablaContainer  = document.getElementById('tablaContainer');
 
   const accionesDiv     = document.getElementById('acciones');
@@ -21,10 +27,30 @@ export function initPostulantes() {
   const accionesDes     = document.getElementById('accionesDeserciones');
   const resumenWrapper = document.getElementById('resumenWrapper');
 
+  // Funciones de toggle **aquí adentro**, así tienen acceso a las refs:
+  function showAsistencias() {
+    tabAsist.classList.replace('bg-gray-200','bg-blue-600');
+    tabAsist.classList.replace('text-gray-700','text-white');
+    tabEval .classList.replace('bg-blue-600','bg-gray-200');
+    tabEval .classList.replace('text-white','text-gray-700');
+    renderTabla();
+  }
+
+  function showEvaluaciones() {
+    tabEval .classList.replace('bg-gray-200','bg-blue-600');
+    tabEval .classList.replace('text-gray-700','text-white');
+    tabAsist.classList.replace('bg-blue-600','bg-gray-200');
+    tabAsist.classList.replace('text-white','text-gray-700');
+    renderEvaluaciones();
+  }
+
+
+
 
   /* ─────────────── estado ─────────────── */
   let dias        = [];
   let capCount    = 5;
+  let evaluaciones = [];    // [{ postulante_dni, fecha_evaluacion, nota }, …]
   let tablaDatos  = [];
   let deserciones = [];
   let filtroCache = '';
@@ -130,6 +156,20 @@ export function initPostulantes() {
 
     // 10) renderizar tabla de resumen
     renderResumen();
+
+
+
+    // 11) mostrar el toggle de vistas
+    const toggleWrapper = document.getElementById('toggleWrapper');
+    toggleWrapper.classList.remove('hidden');
+
+    // estado inicial: mostramos Asistencias
+    showAsistencias()
+
+    // clics en los tabs
+    tabAsist.onclick = () => showAsistencias()
+    tabEval .onclick = () => showEvaluaciones()
+
   };
 
 
@@ -288,6 +328,90 @@ export function initPostulantes() {
       };
     });
   }
+
+  function renderEvaluaciones() {
+    // 1) cabeceras: Nombre/DNI/Nº + sólo días de capacitación
+    const head1 = `
+      <tr>
+        <th colspan="3" class="border-0"></th>
+        <th colspan="${capCount}"
+            class="border bg-indigo-300 text-center">Capacitación</th>
+      </tr>`;
+    const head2 = `
+      <tr>
+        <th></th><th></th><th></th>
+        ${dias.slice(0, capCount).map((_,i) => `
+          <th class="border px-2 text-center bg-indigo-200">Día ${i+1}</th>
+        `).join('')}
+      </tr>`;
+    const head3 = `
+      <tr>
+        <th class="border px-2">Nombre</th>
+        <th class="border px-2">DNI</th>
+        <th class="border px-2">Número</th>
+        ${dias.slice(0, capCount).map(d => `
+          <th class="border px-2 text-center bg-indigo-200">${d}</th>
+        `).join('')}
+      </tr>`;
+
+    // 2) cuerpo: un input number 0–10 por celda
+    const body = tablaDatos.map((p,r) => `
+      <tr>
+        <td class="border px-2">${p.nombre}</td>
+        <td class="border px-2 text-center">${p.dni}</td>
+        <td class="border px-2 text-center">${p.numero}</td>
+        ${dias.slice(0, capCount).map((d,i) => {
+          // buscar nota previa
+          const ev = evaluaciones.find(e =>
+            e.postulante_dni === p.dni &&
+            e.fecha_evaluacion === d
+          );
+          const val = ev ? ev.nota : '';
+          return `
+            <td class="border px-2 bg-indigo-50">
+              <input type="number" min="0" max="10"
+                    class="w-full text-center outline-none bg-transparent"
+                    data-row="${r}" data-col="${i}"
+                    value="${val}">
+            </td>`;
+        }).join('')}
+      </tr>
+    `).join('');
+
+    // 3) renderizar
+    tablaContainer.innerHTML = `
+      <table class="min-w-max bg-white border-collapse text-sm">
+        <thead>${head1}${head2}${head3}</thead>
+        <tbody>${body}</tbody>
+      </table>`;
+
+    // 4) bind input para actualizar evaluaciones y marcar como “dirty”
+    tablaContainer.querySelectorAll('input[type=number]').forEach(inp => {
+      inp.onchange = e => {
+        const row = +e.target.dataset.row;
+        const col = +e.target.dataset.col;
+        const dni = tablaDatos[row].dni;
+        const fecha = dias[col];
+        const nota  = e.target.value === '' ? null : +e.target.value;
+
+        // actualizar array evaluaciones
+        const idx = evaluaciones.findIndex(ev =>
+          ev.postulante_dni === dni &&
+          ev.fecha_evaluacion === fecha
+        );
+        if (nota == null) {
+          if (idx > -1) evaluaciones.splice(idx,1);
+        } else {
+          if (idx > -1) evaluaciones[idx].nota = nota;
+          else evaluaciones.push({ postulante_dni: dni, fecha_evaluacion: fecha, nota });
+        }
+        setDirty(true);
+      };
+    });
+  }
+
+
+
 
   /* ═════════════ tabla reporte deserciones ═════════════ */
   function renderDeserciones() {
@@ -485,5 +609,32 @@ resumenWrapper.classList.remove('hidden');
 }
 
 
+  function showAsistencias() {
+    // estilos del toggle
+    tabAsist.classList.replace('bg-gray-200','bg-blue-600');
+    tabAsist.classList.replace('text-gray-700','text-white');
+    tabEval .classList.replace('bg-blue-600','bg-gray-200');
+    tabEval .classList.replace('text-white','text-gray-700');
+
+    // mostramos la tabla de asistencias y ocultamos evaluaciones
+    renderTabla();
+  }
+
+  function showEvaluaciones() {
+    tabEval .classList.replace('bg-gray-200','bg-blue-600');
+    tabEval .classList.replace('text-gray-700','text-white');
+    tabAsist.classList.replace('bg-blue-600','bg-gray-200');
+    tabAsist.classList.replace('text-white','text-gray-700');
+
+    // aquí luego llamaremos a renderEvaluaciones();
+    renderEvaluaciones();
+  }
+
+
+
+
+
+
 
 }
+
