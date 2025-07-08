@@ -10,12 +10,12 @@ export function initPostulantes() {
   const btnCargar       = document.getElementById('btnCargar');
 
   // ── refs para el toggle Asist/Eval ──
-  const toggleWrapper = document.getElementById('toggleWrapper');
-  const tabAsist      = document.getElementById('tabAsist');
-  const tabEval       = document.getElementById('tabEval');
-
+  const toggleWrapper   = document.getElementById('toggleWrapper');
+  const tabAsist        = document.getElementById('tabAsist');
+  const tabEval         = document.getElementById('tabEval');
 
   const tablaContainer  = document.getElementById('tablaContainer');
+  const evalContainer   = document.getElementById('evaluacionesContainer');
 
   const accionesDiv     = document.getElementById('acciones');
   const btnGuardar      = document.getElementById('btnGuardar');
@@ -25,7 +25,10 @@ export function initPostulantes() {
   const desWrapper      = document.getElementById('desercionesWrapper');
   const desContainer    = document.getElementById('desercionesContainer');
   const accionesDes     = document.getElementById('accionesDeserciones');
-  const resumenWrapper = document.getElementById('resumenWrapper');
+
+  const resumenWrapper  = document.getElementById('resumenWrapper');
+  const evalWrapper     = document.getElementById('evaluacionesWrapper');
+  const accionesEval    = document.getElementById('accionesEvaluaciones');
 
   // Funciones de toggle **aquí adentro**, así tienen acceso a las refs:
   function showAsistencias() {
@@ -33,6 +36,16 @@ export function initPostulantes() {
     tabAsist.classList.replace('text-gray-700','text-white');
     tabEval .classList.replace('bg-blue-600','bg-gray-200');
     tabEval .classList.replace('text-white','text-gray-700');
+
+    tablaContainer.classList.remove('hidden');
+    desWrapper     .classList.remove('hidden');
+    resumenWrapper .classList.remove('hidden');
+    evalWrapper    .classList.add   ('hidden');
+
+    accionesDiv    .classList.remove('hidden');
+    if (accionesDes) accionesDes.classList.remove('hidden');
+    accionesEval   .classList.add   ('hidden');
+
     renderTabla();
   }
 
@@ -41,16 +54,23 @@ export function initPostulantes() {
     tabEval .classList.replace('text-gray-700','text-white');
     tabAsist.classList.replace('bg-blue-600','bg-gray-200');
     tabAsist.classList.replace('text-white','text-gray-700');
+
+    tablaContainer.classList.add   ('hidden');
+    desWrapper     .classList.add   ('hidden');
+    resumenWrapper .classList.add   ('hidden');
+    evalWrapper    .classList.remove('hidden');
+
+    accionesDiv    .classList.add   ('hidden');
+    if (accionesDes) accionesDes.classList.add('hidden');
+    accionesEval   .classList.remove('hidden');
+
     renderEvaluaciones();
   }
-
-
-
 
   /* ─────────────── estado ─────────────── */
   let dias        = [];
   let capCount    = 5;
-  let evaluaciones = [];    // [{ postulante_dni, fecha_evaluacion, nota }, …]
+  let evaluaciones= [];  // [{ postulante_dni, fecha_evaluacion, nota }, …]
   let tablaDatos  = [];
   let deserciones = [];
   let filtroCache = '';
@@ -97,7 +117,7 @@ export function initPostulantes() {
       filtroCache = fKey;
     }
     const fechaIni = capaSelect.value;
-    const capaNum  = capaSelect.selectedIndex + 1;  // <-- calculamos el número de capa
+    const capaNum  = capaSelect.selectedIndex + 1;
 
     // 2) cargar postulantes y asistencias
     const { postulantes, asistencias, duracion } = await api(
@@ -136,45 +156,42 @@ export function initPostulantes() {
       `&mes=${mes}` +
       `&capa=${capaNum}`
     );
-    // 6) asignar y permitir editar motivo
     deserciones = desPrev.map(d => ({
       ...d,
       capa_numero: capaNum,
       guardado: false
     }));
 
-    // 7) renderizar deserciones y mostrar el panel
+    // 5bis) cargar evaluaciones del servidor
+    const evalPrev = await api(
+      `/api/evaluaciones?` +
+      `dniCap=${dniCap}` +
+      `&campania=${encodeURIComponent(camp)}` +
+      `&mes=${mes}` +
+      `&fechaInicio=${fechaIni}`
+    );
+    evaluaciones = evalPrev;
+
+    // 6) renderizar deserciones y mostrar el panel
     renderDeserciones();
     desWrapper.classList.remove('hidden');
     if (accionesDes) accionesDes.classList.remove('hidden');
 
-    // 8) ocultar botón “Guardar” hasta que haya cambios
+    // 7) ocultar botón “Guardar” hasta que haya cambios
     setDirty(false);
-    
-    // 9) renderizar tabla de asistencias
+
+    // 8) renderizar tabla de asistencias
     renderTabla();
 
-    // 10) renderizar tabla de resumen
+    // 9) renderizar tabla de resumen
     renderResumen();
 
-
-
-    // 11) mostrar el toggle de vistas
-    const toggleWrapper = document.getElementById('toggleWrapper');
+    // 10) mostrar el toggle de vistas
     toggleWrapper.classList.remove('hidden');
-
-    // estado inicial: mostramos Asistencias
-    showAsistencias()
-
-    // clics en los tabs
-    tabAsist.onclick = () => showAsistencias()
-    tabEval .onclick = () => showEvaluaciones()
-
+    showAsistencias();
+    tabAsist.onclick = showAsistencias;
+    tabEval .onclick = showEvaluaciones;
   };
-
-
-
-
 
 
 
@@ -329,14 +346,48 @@ export function initPostulantes() {
     });
   }
 
-  function renderEvaluaciones() {
-    // 1) cabeceras: Nombre/DNI/Nº + sólo días de capacitación
+
+
+  
+
+function renderEvaluaciones() {
+    // Función helper para calcular el promedio de un postulante
+    const calcularPromedio = (dni) => {
+      const notasPostulante = evaluaciones.filter(e => 
+        e.postulante_dni === dni && 
+        e.nota !== null && 
+        e.nota !== undefined && 
+        e.nota !== ''
+      );
+      
+      if (notasPostulante.length === 0) return null;
+      
+      const suma = notasPostulante.reduce((acc, e) => acc + parseFloat(e.nota), 0);
+      return (suma / notasPostulante.length).toFixed(1);
+    };
+
+    // Función helper para obtener la clase de color según el promedio
+    const obtenerClaseColor = (promedio) => {
+      if (!promedio) return 'text-gray-400';
+      const nota = parseFloat(promedio);
+      if (nota >= 8.5) return 'text-green-600 font-bold';
+      if (nota >= 6) return 'text-yellow-600 font-bold';
+      return 'text-red-600 font-bold';
+    };
+
+    // 1) cabeceras: Nombre/DNI/Nº + días de capacitación + Promedio
+    // Determinar el título según el modo actual (verificando si el botón de evaluaciones está activo)
+    const isEvaluacionesMode = tabEval.classList.contains('bg-blue-600');
+    const tituloCapacitacion = isEvaluacionesMode ? 'Capacitación - Evaluaciones' : 'Capacitación';
+    
     const head1 = `
       <tr>
         <th colspan="3" class="border-0"></th>
         <th colspan="${capCount}"
-            class="border bg-indigo-300 text-center">Capacitación</th>
+            class="border bg-indigo-300 text-center">${tituloCapacitacion}</th>
+        <th rowspan="3" class="border bg-yellow-300 text-center font-bold">Promedio<br>Actual</th>
       </tr>`;
+    
     const head2 = `
       <tr>
         <th></th><th></th><th></th>
@@ -344,6 +395,7 @@ export function initPostulantes() {
           <th class="border px-2 text-center bg-indigo-200">Día ${i+1}</th>
         `).join('')}
       </tr>`;
+    
     const head3 = `
       <tr>
         <th class="border px-2">Nombre</th>
@@ -354,65 +406,104 @@ export function initPostulantes() {
         `).join('')}
       </tr>`;
 
-    // 2) cuerpo: un input number 0–10 por celda
-    const body = tablaDatos.map((p,r) => `
-      <tr>
-        <td class="border px-2">${p.nombre}</td>
-        <td class="border px-2 text-center">${p.dni}</td>
-        <td class="border px-2 text-center">${p.numero}</td>
-        ${dias.slice(0, capCount).map((d,i) => {
-          // buscar nota previa
-          const ev = evaluaciones.find(e =>
-            e.postulante_dni === p.dni &&
-            e.fecha_evaluacion === d
-          );
-          const val = ev ? ev.nota : '';
-          return `
-            <td class="border px-2 bg-indigo-50">
-              <input type="number" min="0" max="10"
-                    class="w-full text-center outline-none bg-transparent"
-                    data-row="${r}" data-col="${i}"
-                    value="${val}">
-            </td>`;
-        }).join('')}
-      </tr>
-    `).join('');
+    // 2) filtrar personas que no han desertado
+    const personasActivas = tablaDatos.filter(p => {
+      return !deserciones.some(d => d.postulante_dni === p.dni);
+    });
 
-    // 3) renderizar
+    // 3) cuerpo: un input number 0–10 por celda + columna de promedio (solo personas activas)
+    const body = personasActivas.map((p,r) => {
+      const promedio = calcularPromedio(p.dni);
+      const promedioDisplay = promedio ? promedio : '---';
+      const promedioClass = obtenerClaseColor(promedio);
+      
+      return `
+        <tr>
+          <td class="border px-2">${p.nombre}</td>
+          <td class="border px-2 text-center">${p.dni}</td>
+          <td class="border px-2 text-center">${p.numero}</td>
+          ${dias.slice(0, capCount).map((d,i) => {
+            // buscar nota previa
+            const ev = evaluaciones.find(e =>
+              e.postulante_dni === p.dni &&
+              e.fecha_evaluacion === d
+            );
+            const val = ev ? ev.nota : '';
+            return `
+              <td class="border px-2 bg-indigo-50">
+                <input type="number" min="0" max="10" step="0.1"
+                      class="w-full text-center outline-none bg-transparent"
+                      data-row="${r}" data-col="${i}"
+                      value="${val}">
+              </td>`;
+          }).join('')}
+          <td class="border px-2 bg-yellow-50 text-center ${promedioClass}" data-promedio-dni="${p.dni}">
+            ${promedioDisplay}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // 4) renderizar
     tablaContainer.innerHTML = `
       <table class="min-w-max bg-white border-collapse text-sm">
         <thead>${head1}${head2}${head3}</thead>
         <tbody>${body}</tbody>
       </table>`;
 
-    // 4) bind input para actualizar evaluaciones y marcar como “dirty”
+    // 5) función para actualizar el promedio de un postulante específico
+    const actualizarPromedio = (dni) => {
+      const promedio = calcularPromedio(dni);
+      const celda = tablaContainer.querySelector(`[data-promedio-dni="${dni}"]`);
+      if (celda) {
+        const promedioDisplay = promedio ? promedio : '---';
+        const promedioClass = obtenerClaseColor(promedio);
+        
+        celda.textContent = promedioDisplay;
+        celda.className = `border px-2 bg-yellow-50 text-center ${promedioClass}`;
+      }
+    };
+
+    // 6) bind input para actualizar evaluaciones y promedio dinámicamente
     tablaContainer.querySelectorAll('input[type=number]').forEach(inp => {
       inp.onchange = e => {
         const row = +e.target.dataset.row;
         const col = +e.target.dataset.col;
-        const dni = tablaDatos[row].dni;
+        const dni = personasActivas[row].dni; // usar personasActivas en lugar de tablaDatos
         const fecha = dias[col];
-        const nota  = e.target.value === '' ? null : +e.target.value;
+        const nota = e.target.value === '' ? null : parseFloat(e.target.value);
 
         // actualizar array evaluaciones
         const idx = evaluaciones.findIndex(ev =>
           ev.postulante_dni === dni &&
           ev.fecha_evaluacion === fecha
         );
+        
         if (nota == null) {
-          if (idx > -1) evaluaciones.splice(idx,1);
+          if (idx > -1) evaluaciones.splice(idx, 1);
         } else {
           if (idx > -1) evaluaciones[idx].nota = nota;
           else evaluaciones.push({ postulante_dni: dni, fecha_evaluacion: fecha, nota });
         }
+        
+        // actualizar promedio dinámicamente
+        actualizarPromedio(dni);
+        
         setDirty(true);
+      };
+
+      // también actualizar promedio mientras se escribe (opcional)
+      inp.oninput = e => {
+        const row = +e.target.dataset.row;
+        const dni = personasActivas[row].dni; // usar personasActivas en lugar de tablaDatos
+        // pequeño delay para no sobrecargar
+        clearTimeout(inp.timeout);
+        inp.timeout = setTimeout(() => actualizarPromedio(dni), 300);
       };
     });
   }
 
-
-
-
+  
   /* ═════════════ tabla reporte deserciones ═════════════ */
   function renderDeserciones() {
     if (!deserciones.length) {
@@ -461,68 +552,54 @@ export function initPostulantes() {
       });
   }
 
-  /* ═════════════ columnas dinámicas + / − ═════════════ */
-  function addCap() {
-    dias.splice(capCount, 0, nextDate(dias[capCount - 1]));
-    capCount++;
-    tablaDatos.forEach(p => p.asistencia.splice(capCount - 1, 0, ''));
-    refreshOJT(); renderTabla(); setDirty(true);
-  }
-  function subCap() {
-    if (capCount <= 1) return;
-    dias.splice(capCount - 1, 1);
-    capCount--;
-    tablaDatos.forEach(p => p.asistencia.splice(capCount, 1));
-    refreshOJT(); renderTabla(); setDirty(true);
-  }
-  function addOjt() {
-    dias.push(nextDate(dias.at(-1)));
-    tablaDatos.forEach(p => p.asistencia.push(''));
-    renderTabla(); setDirty(true);
-  }
-  function subOjt() {
-    if (dias.length <= capCount) return;
-    dias.pop();
-    tablaDatos.forEach(p => p.asistencia.pop());
-    renderTabla(); setDirty(true);
-  }
-
-  /* ═════════════ GUARDAR todo ═════════════ */
-  const handleSave = async () => {
-   // Volvemos a tomar la capa seleccionada
-   const fechaIni = capaSelect.value;
-    // 1) payload de asistencia
-    const payloadA = [];
-    tablaDatos.forEach(p => {
-      p.asistencia.forEach((est,i) => {
-        if (est) {
-          payloadA.push({
-            postulante_dni    : p.dni,
-            fecha             : dias[i],
-            etapa             : i < capCount ? 'Capacitacion' : 'OJT',
-            estado_asistencia : est
-          });
-        }
-      });
+/* ═════════════ GUARDAR todo ═════════════ */
+const handleSave = async () => {
+  // Volvemos a tomar la capa seleccionada
+  const fechaIni = capaSelect.value;
+  
+  // 1) payload de asistencia
+  const payloadA = [];
+  tablaDatos.forEach(p => {
+    p.asistencia.forEach((est,i) => {
+      if (est) {
+        payloadA.push({
+          postulante_dni    : p.dni,
+          fecha             : dias[i],
+          etapa             : i < capCount ? 'Capacitacion' : 'OJT',
+          estado_asistencia : est
+        });
+      }
     });
+  });
 
-    // 2) payload de deserciones
-    let desToSend = deserciones
-      .filter(d => d.motivo && d.motivo.trim() !== '')
-      .map(d => ({
-        postulante_dni  : d.postulante_dni,
-        fecha_desercion : d.fecha_desercion,
-        motivo          : d.motivo,
-        capa_numero     : d.capa_numero
-      }));
+  // 2) payload de deserciones
+  let desToSend = deserciones
+    .filter(d => d.motivo && d.motivo.trim() !== '')
+    .map(d => ({
+      postulante_dni  : d.postulante_dni,
+      fecha_desercion : d.fecha_desercion,
+      motivo          : d.motivo,
+      capa_numero     : d.capa_numero
+    }));
 
-    // 3) nada que guardar?
-    if (!payloadA.length && !desToSend.length) {
-      alert('Nada por guardar');
-      return;
-    }
+  // 3) payload de evaluaciones - NUEVO
+  const payloadE = evaluaciones
+    .filter(e => e.nota !== null && e.nota !== undefined)
+    .map(e => ({
+      postulante_dni    : e.postulante_dni,
+      fecha_evaluacion  : e.fecha_evaluacion,
+      nota              : e.nota,
+      fechaInicio       : fechaIni  // agregar fechaInicio si es necesario
+    }));
 
-    // 4) enviar asistencia
+  // 4) nada que guardar?
+  if (!payloadA.length && !desToSend.length && !payloadE.length) {
+    alert('Nada por guardar');
+    return;
+  }
+
+  try {
+    // 5) enviar asistencia
     if (payloadA.length) {
       await api('/api/asistencia/bulk', {
         method : 'POST',
@@ -531,11 +608,11 @@ export function initPostulantes() {
       });
     }
 
-    // 5) enviar deserciones (ahora con fechaInicio)
+    // 6) enviar deserciones (ahora con fechaInicio)
     if (desToSend.length) {
       const desToSendConFecha = desToSend.map(d => ({
         ...d,
-       fechaInicio: fechaIni      // <-- ahora sí, porque lo acabamos de definir
+        fechaInicio: fechaIni
       }));
       console.log('🛠 Deserciones a enviar:', desToSendConFecha);
 
@@ -547,21 +624,41 @@ export function initPostulantes() {
 
       deserciones.forEach(d => d.guardado = true);
       renderDeserciones();
-      localStorage.setItem('deserciones', JSON.stringify(deserciones));
     }
 
-    // 6) feedback al usuario
+    // 7) enviar evaluaciones - NUEVO
+    if (payloadE.length) {
+      console.log('🛠 Evaluaciones a enviar:', payloadE);
+      
+      await api('/api/evaluaciones/bulk', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify(payloadE)
+      });
+    }
+
+    // 8) feedback al usuario
     alert('Cambios guardados ✔️');
     setDirty(false);
     desWrapper.classList.remove('hidden');
     if (accionesDes) accionesDes.classList.remove('hidden');
 
     renderResumen();
-  };
+    
+  } catch (error) {
+    console.error('Error al guardar:', error);
+    alert('Error al guardar los cambios');
+  }
+};
 
   // atar ambos botones al mismo handler
   btnGuardar.onclick    = handleSave;
   if (btnGuardarDes) btnGuardarDes.onclick = handleSave;
+
+
+
+
+
 
   /* ═════════════ Excel ═════════════ */
   btnExcel.onclick = () =>

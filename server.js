@@ -246,6 +246,71 @@ UPDATE Postulantes_En_Formacion
 });
 
 
+// GET /api/evaluaciones?dniCap=…&campania=…&mes=YYYY-MM&fechaInicio=YYYY-MM-DD
+app.get('/api/evaluaciones', async (req, res) => {
+  const { dniCap, campania, mes, fechaInicio } = req.query;
+  try {
+    const { recordset } = await pool.request()
+      .input('dniCap',      sql.VarChar(20),  dniCap)
+      .input('camp',        sql.VarChar(100), campania)
+      .input('prefijo',     sql.VarChar(7),   mes)           // YYYY-MM
+      .input('fechaInicio', sql.VarChar(10),  fechaInicio)  // YYYY-MM-DD
+      .query(`
+        SELECT 
+          e.postulante_dni,
+          CONVERT(char(10), e.fecha_evaluacion, 23) AS fecha_evaluacion,
+          e.nota
+        FROM Evaluaciones_Formacion e
+        JOIN Postulantes_En_Formacion p
+          ON p.DNI = e.postulante_dni
+        WHERE
+          p.DNI_Capacitador            = @dniCap
+          AND p.Campaña                = @camp
+          AND FORMAT(p.FechaInicio,'yyyy-MM')      = @prefijo
+          AND FORMAT(p.FechaInicio,'yyyy-MM-dd')   = @fechaInicio
+        ORDER BY e.fecha_evaluacion
+      `);
+    res.json(recordset);
+  } catch (err) {
+    console.error(err);
+    res.sendStatus(500);
+  }
+});
+
+// POST /api/evaluaciones/bulk  (body = [{ postulante_dni, fecha_evaluacion, nota }])
+app.post('/api/evaluaciones/bulk', async (req, res) => {
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    for (const ev of req.body) {
+      await tx.request()
+        .input('dni',    sql.VarChar(20), ev.postulante_dni)
+        .input('fecha',  sql.Date,        ev.fecha_evaluacion)
+        .input('nota',   sql.Int,         ev.nota)
+        .query(`
+MERGE Evaluaciones_Formacion AS T
+USING (SELECT @dni AS dni, @fecha AS fecha) AS S
+  ON T.postulante_dni = S.dni
+ AND T.fecha_evaluacion = S.fecha
+WHEN MATCHED THEN
+  UPDATE SET nota = @nota
+WHEN NOT MATCHED THEN
+  INSERT (postulante_dni, fecha_evaluacion, nota)
+  VALUES (@dni, @fecha, @nota);
+        `);
+    }
+    await tx.commit();
+    res.json({ ok: true });
+  } catch (e) {
+    await tx.rollback();
+    console.error(e);
+    res.status(500).json({ error: 'No se pudieron guardar evaluaciones' });
+  }
+});
+
+
+
+
 /* 7️⃣  MERGE de asistencias */
 app.post('/api/asistencia/bulk', async (req, res) => {
   const tx = new sql.Transaction(pool);
